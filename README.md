@@ -4,7 +4,8 @@ Juego interactivo en 3D para directos de TikTok: los espectadores calientan entr
 
 🌐 Página del juego: **https://belumoka.com/juego-huevo-ancestral-tiktok-live/**
 
----
+<img width="523" height="801" alt="huevo-ancestral" src="https://github.com/user-attachments/assets/9d70f216-90fd-440b-86cf-08c38fe67dc5" />
+
 
 ## Cómo se juega
 
