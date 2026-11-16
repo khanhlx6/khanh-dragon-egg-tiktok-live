@@ -1,43 +1,69 @@
-# Simple workflow for deploying static content to GitHub Pages
-name: Deploy static content to Pages
+# Triển khai game tĩnh lên GitHub Pages
+# https://khanhlx6.github.io/khanh-dragon-egg-tiktok-live/
+#
+# Chỉ những file cần cho website được đưa lên Pages (index.html, game ES + game VI),
+# không đẩy cả repo (server Node, tools/, README…) lên web.
+name: Deploy game to GitHub Pages
 
 on:
-  # Runs on pushes targeting the default branch
+  # Chạy mỗi khi push lên nhánh main
   push:
     branches: ["main"]
 
-  # Allows you to run this workflow manually from the Actions tab
+  # Cho phép bấm chạy tay trong tab Actions
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+# Quyền của GITHUB_TOKEN để deploy lên GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+# Chỉ một lần deploy chạy cùng lúc; KHÔNG huỷ lần đang chạy để bản production luôn hoàn tất
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  # Single deploy job since we're just deploying
+  # 1) Gom các file tĩnh vào thư mục _site
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Chuẩn bị thư mục _site
+        run: |
+          set -euo pipefail
+          rm -rf _site
+          mkdir -p _site/vi
+
+          # Trang chủ + bản gốc tiếng Tây Ban Nha
+          cp index.html huevo-dragon.html _site/
+          # Bản dịch tiếng Việt
+          cp vi/huevo-dragon.html _site/vi/
+          # Tắt Jekyll để Pages phục vụ file y nguyên
+          touch _site/.nojekyll
+
+          echo "Nội dung sẽ deploy:"
+          find _site -type f | sort
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  # 2) Deploy artifact vừa tạo lên Pages
   deploy:
+    needs: build
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          # Upload entire repository
-          path: '.'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
