@@ -1,0 +1,198 @@
+# CI: tự động chạy `python3 tools/build-vi.py` sau mỗi lần merge
+#
+# Mục đích: bản dịch trong `vi/` không bao giờ bị lệch so với bản gốc (tiếng Tây Ban Nha).
+#   - Bản gốc đổi phần KHÔNG cần dịch (màu, thông số, logic…)  -> vi/ được sinh lại & tự commit.
+#   - Tác giả đổi CÂU CHỮ cần dịch                             -> CI đỏ, chỉ rõ chuỗi cần cập nhật
+#     trong tools/build-vi.py (xem phần Summary của run) — không tự đoán bừa bản dịch.
+#   - Mọi PR cũng chạy kiểm tra này để chắc vi/ luôn sinh ra được từ bản gốc.
+#
+# Lưu ý: commit do workflow tạo ra bằng GITHUB_TOKEN sẽ KHÔNG kích hoạt workflow khác,
+# nên sau khi commit bản dịch ta phải chủ động gọi lại workflow deploy Pages.
+name: Sync Vietnamese translation
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+# Mặc định chỉ đọc; job nào cần ghi sẽ tự nâng quyền.
+permissions:
+  contents: read
+
+concurrency:
+  group: vi-sync-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1) Kiểm tra: chạy trên mọi push / PR / bấm tay. Chỉ đọc, không ghi gì.
+  # ---------------------------------------------------------------------------
+  verify:
+    name: Sinh & kiểm tra bản dịch
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node.js (để kiểm tra cú pháp JS)
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Chạy tools/build-vi.py
+        id: build
+        run: |
+          set -o pipefail
+          python3 tools/build-vi.py 2>&1 | tee /tmp/build-vi.log
+
+      - name: Chạy tools/check-vi.py
+        run: |
+          set -o pipefail
+          python3 tools/check-vi.py 2>&1 | tee /tmp/check-vi.log
+
+      - name: Bản dịch có khớp bản gốc chưa?
+        id: diff
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- vi/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "✔ vi/ đã khớp bản gốc — không cần commit."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "… vi/ cần cập nhật:"
+            git --no-pager diff --stat -- vi/
+          fi
+          if [ -n "$(git status --porcelain -- tools/)" ]; then
+            echo "… Lưu ý: chính tools/ cũng đang bị sửa trong lần chạy này."
+          fi
+
+      - name: Tóm tắt
+        if: always()
+        run: |
+          {
+            echo "## 🥚 Bản dịch tiếng Việt"
+            echo ""
+            echo "| Hạng mục | Kết quả |"
+            echo "| --- | --- |"
+            echo "| Sự kiện | \`${{ github.event_name }}\` · \`${{ github.ref_name }}\` |"
+            echo "| vi/ cần cập nhật? | **${{ steps.diff.outputs.changed || 'không xác định' }}** |"
+            echo ""
+            echo "<details><summary>Nhật ký <code>tools/build-vi.py</code></summary>"
+            echo ""
+            echo '```'
+            cat /tmp/build-vi.log 2>/dev/null || echo "(chưa chạy tới bước này)"
+            echo '```'
+            echo "</details>"
+            echo ""
+            echo "<details><summary>Nhật ký <code>tools/check-vi.py</code></summary>"
+            echo ""
+            echo '```'
+            cat /tmp/check-vi.log 2>/dev/null || echo "(chưa chạy tới bước này)"
+            echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Hướng dẫn khi bản gốc đổi câu chữ
+        if: failure() && steps.build.outcome == 'failure'
+        run: |
+          {
+            echo ""
+            echo "### ❌ \`tools/build-vi.py\` không khớp bản gốc"
+            echo ""
+            echo "Tác giả (Belumoka) có thể vừa đổi câu chữ trong bản gốc, nên chuỗi mà"
+            echo "script đang tìm không còn nữa. Cách xử lý:"
+            echo ""
+            echo "1. Đọc thông báo lỗi ở nhật ký trên: mỗi dòng cho biết **nhãn** và **chuỗi gốc**."
+            echo "2. Cập nhật dòng tương ứng trong \`HTML_MAP\` (game) hoặc \`JS_MAP\` (máy chủ)"
+            echo "   của \`tools/build-vi.py\`, rồi dịch chuỗi mới sang tiếng Việt."
+            echo "3. Chạy lại \`python3 tools/build-vi.py\` (và \`python3 tools/check-vi.py\`) ở máy."
+            echo "4. Commit cả bản gốc lẫn bản dịch."
+            echo ""
+            echo "> Không sửa tay file trong \`vi/\`: chúng luôn được sinh lại từ bản gốc."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # 2) Đồng bộ: chỉ chạy khi push lên main. Nếu bản dịch lệch thì tự commit & push.
+  # ---------------------------------------------------------------------------
+  sync:
+    name: Tự commit bản dịch mới
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # để push commit bản dịch
+      actions: write  # để gọi lại workflow deploy Pages
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Sinh lại bản dịch
+        run: python3 tools/build-vi.py
+
+      - name: Commit & push nếu có thay đổi
+        id: commit
+        run: |
+          set -euo pipefail
+          git add -- vi/
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "✔ Không có gì để commit."
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(i18n): tự động cập nhật bản dịch tiếng Việt
+
+          Sinh lại từ bản gốc bằng: python3 tools/build-vi.py
+          Workflow: .github/workflows/vi-sync.yml"
+
+          # main có thể vừa nhận commit khác trong lúc job chạy -> rebase rồi thử lại
+          for lan in 1 2 3; do
+            if git push origin HEAD:main; then
+              echo "✔ Đã push bản dịch mới (lần thử $lan)."
+              exit 0
+            fi
+            echo "… push bị từ chối, thử rebase rồi push lại ($lan/3)"
+            git pull --rebase --autostash origin main
+          done
+          echo "✘ Không push được sau 3 lần thử." >&2
+          exit 1
+
+      - name: Kích hoạt deploy Pages cho commit bản dịch
+        if: steps.commit.outputs.changed == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Commit do GITHUB_TOKEN tạo ra không tự kích hoạt workflow deploy,
+          # nên gọi tay để Pages không bị phục vụ bản dịch cũ.
+          gh workflow run static.yml --ref main
+          echo "✔ Đã yêu cầu deploy lại GitHub Pages."
+
+      - name: Tóm tắt
+        if: always()
+        run: |
+          {
+            echo "## 🥚 Đồng bộ bản dịch (main)"
+            echo ""
+            if [ "${{ steps.commit.outputs.changed }}" = "true" ]; then
+              echo "✅ Đã tự commit & push bản dịch mới lên \`main\`."
+            else
+              echo "✅ Bản dịch vốn đã khớp — không cần commit."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
