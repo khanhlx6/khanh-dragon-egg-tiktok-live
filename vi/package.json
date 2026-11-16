@@ -1,0 +1,16 @@
+{
+  "name": "juego-huevo-ancestral-tiktok-live",
+  "version": "1.0.0",
+  "description": "Game tương tác 3D cho TikTok LIVE: khán giả cùng ấp một quả trứng rồng bằng like và quà tặng. (Bản dịch tiếng Việt, tạo tự động bằng tools/build-vi.py)",
+  "main": "serverhuevo.js",
+  "scripts": {
+    "start": "node serverhuevo.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "tiktok-live-connector": "^2.0.0"
+  },
+  "author": "Belumoka (https://belumoka.com)",
+  "homepage": "https://belumoka.com/juego-huevo-ancestral-tiktok-live/"
+}
