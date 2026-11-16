@@ -5,7 +5,10 @@ Sinh các bản tiếng Việt từ bản gốc (tiếng Tây Ban Nha) của tá
   huevo-dragon.html            -> vi/huevo-dragon.html
   serverhuevo.js               -> vi/serverhuevo.js
   package.json                 -> vi/package.json
-  README.md                    -> README.vi.md
+
+(README.vi.md là bản dịch viết tay vì cấu trúc văn xuôi khó ánh xạ tự động;
+ nó KHÔNG được sinh bởi script này. Khi README.md gốc đổi nội dung, hãy tự
+ cập nhật README.vi.md cho khớp.)
 
 Bản gốc KHÔNG BAO GIỜ bị sửa để sau này còn đồng bộ (merge) bản fork từ tác giả.
 Chạy lại sau mỗi lần merge upstream:
@@ -13,9 +16,9 @@ Chạy lại sau mỗi lần merge upstream:
   python3 tools/build-vi.py
 
 Mỗi phép thay thế đều được kiểm tra: nếu chuỗi gốc không còn trong file thì script
-báo lỗi và dừng, nhờ vậy ta biết ngay tác giả đã đổi đoạn nào cần dịch lại.
+báo lỗi, nhờ vậy ta biết ngay tác giả đã đổi đoạn nào cần dịch lại. Script chạy hết
+tất cả các phép thay thế rồi mới báo lỗi một lần, để không phải sửa từng lỗi một.
 """
-import io
 import json
 import re
 import sys
@@ -23,17 +26,34 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# Danh sách lỗi gom lại để báo một lần ở cuối (thay vì dừng ngay lỗi đầu tiên)
+LOI = []
+
 
 def sub(text, old, new, label, count=1):
-    """Thay thế chính xác `old` -> `new`, báo lỗi nếu không tìm thấy."""
+    """Thay thế chính xác `old` -> `new`, ghi lỗi nếu số chỗ xuất hiện không khớp."""
     found = text.count(old)
     if found != count:
-        raise SystemExit(
-            f"[LỖI] '{label}': cần {count} chỗ xuất hiện nhưng thấy {found}.\n"
-            f"       Chuỗi gốc: {old[:120]!r}\n"
-            f"       Có thể tác giả đã sửa đoạn này, hãy cập nhật tools/build-vi.py"
-        )
+        LOI.append((label, old, count, found))
+        return text
     return text.replace(old, new)
+
+
+def bao_loi_va_thoat():
+    """In toàn bộ lỗi đã gom rồi thoát với mã 1 (không ghi file nào)."""
+    if not LOI:
+        return
+    print(f"\n[LỖI] Có {len(LOI)} chuỗi cần dịch không khớp với bản gốc:\n", file=sys.stderr)
+    for label, old, can, thay in LOI:
+        print(f"  • '{label}': cần {can} chỗ, thấy {thay}", file=sys.stderr)
+        print(f"    chuỗi gốc: {old[:150]!r}", file=sys.stderr)
+    print(
+        "\nNhiều khả năng tác giả đã đổi câu chữ ở các đoạn trên.\n"
+        "Hãy cập nhật các dòng tương ứng trong HTML_MAP / JS_MAP của tools/build-vi.py\n"
+        "rồi chạy lại:  python3 tools/build-vi.py\n",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -150,21 +170,24 @@ vi = sub(
     "chú thích đầu file",
 )
 
+# Nếu có phép thế nào không khớp thì dừng ngay tại đây, không kiểm tra tiếp
+# (kết quả lúc này chưa đầy đủ nên các kiểm tra sau sẽ báo sai).
+bao_loi_va_thoat()
+
 # kiểm tra không còn chuỗi tiếng Tây Ban Nha đáng ngờ trong phần giao diện
-leftovers = []
 for pat in ("INCUBANDO", "PADRES", "Añad", "añad", "siguió", "Criado", "DESPIERTA",
             "HUEVO", "NUEVO", "PARAR", "SONIDO", "VACÍO", "Aún no", "Anónimo",
-            "FUEGO", "HIELO", "VENENO", "COMÚN", "ÉPICO", "MÍTICO", "REGALO"):
+            "FUEGO", "HIELO", "VENENO", "COMÚN", "ÉPICO", "MÍTICO", "REGALO",
+            "ECLOSIÓN", "AÑADE LUZ", "ESENCIA"):
     for m in re.finditer(re.escape(pat), vi):
+        if pat in ("HUEVO",) and "BẢN DỊCH TIẾNG VIỆT" in vi[: m.start()].split("-->")[0]:
+            continue  # bỏ qua phần chú thích đầu file (có nhắc tên file gốc)
         line = vi[: m.start()].count("\n") + 1
-        leftovers.append(f"  dòng {line}: {pat}")
-if leftovers:
-    print("[CẢNH BÁO] còn chuỗi tiếng Tây Ban Nha trong bản dịch:")
-    print("\n".join(leftovers))
+        LOI.append((f"còn chuỗi ES ở dòng {line}", pat, 0, 1))
 
-(ROOT / "vi").mkdir(exist_ok=True)
-(ROOT / "vi" / "huevo-dragon.html").write_text(vi, encoding="utf-8")
-print("✔ vi/huevo-dragon.html")
+# Kết quả được gom lại, chỉ ghi ra file sau khi TẤT CẢ phép thế đều khớp
+# (tránh trường hợp ghi được một phần rồi mới báo lỗi).
+KET_QUA = {"vi/huevo-dragon.html": vi}
 
 
 # ---------------------------------------------------------------------------
@@ -235,8 +258,7 @@ for item in JS_MAP:
     label = item[2] if len(item) > 2 else old[:50]
     vijs = sub(vijs, old, new, label)
 
-(ROOT / "vi" / "serverhuevo.js").write_text(vijs, encoding="utf-8")
-print("✔ vi/serverhuevo.js")
+KET_QUA["vi/serverhuevo.js"] = vijs
 
 
 # ---------------------------------------------------------------------------
@@ -250,7 +272,12 @@ vi_pkg["description"] = (
     "bằng like và quà tặng. (Bản dịch tiếng Việt, tạo tự động bằng tools/build-vi.py)"
 )
 vi_pkg["author"] = pkg["author"]  # giữ nguyên tác giả gốc
-(ROOT / "vi" / "package.json").write_text(
-    json.dumps(vi_pkg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-)
-print("✔ vi/package.json")
+KET_QUA["vi/package.json"] = json.dumps(vi_pkg, ensure_ascii=False, indent=2) + "\n"
+
+# --- chốt lần cuối: còn lỗi nào thì dừng, KHÔNG ghi gì cả --------------------
+bao_loi_va_thoat()
+
+(ROOT / "vi").mkdir(exist_ok=True)
+for ten, noi_dung in KET_QUA.items():
+    (ROOT / ten).write_text(noi_dung, encoding="utf-8")
+    print(f"✔ {ten}")

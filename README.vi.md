@@ -30,7 +30,10 @@ Khi thanh nhiệt đầy, quả trứng nứt ra và **rồng ra đời**: hiệ
 | `index.html` | Trang chủ trên GitHub Pages, chỉ để điều hướng cho nhanh (không bắt buộc). |
 | `vi/` | Bản dịch tiếng Việt: game (`vi/huevo-dragon.html`), máy chủ (`vi/serverhuevo.js`), `vi/package.json`. |
 | `tools/build-vi.py` | Script tự sinh bản dịch tiếng Việt từ bản gốc. Chạy lại sau mỗi lần đồng bộ với upstream. |
-| `README.vi.md` | Tệp hướng dẫn này. |
+| `tools/check-vi.py` | Kiểm tra nhanh bản dịch (JSON hợp lệ, cú pháp JS, còn sót chuỗi tiếng Tây Ban Nha hay không). |
+| `.github/workflows/vi-sync.yml` | CI: tự chạy `build-vi.py` sau mỗi lần merge và tự commit bản dịch mới. |
+| `.github/workflows/static.yml` | CI: deploy game lên GitHub Pages. |
+| `README.vi.md` | Tệp hướng dẫn này (bản dịch viết tay, không do script sinh). |
 
 ## Yêu cầu
 
@@ -126,7 +129,26 @@ git merge upstream/main
 python3 tools/build-vi.py
 ```
 
-`tools/build-vi.py` sinh ra `vi/huevo-dragon.html`, `vi/serverhuevo.js` và `vi/package.json` từ bản gốc. Script kiểm tra từng chuỗi cần dịch: nếu tác giả đã đổi câu chữ, nó dừng lại và chỉ rõ vị trí cần cập nhật trong script, nhờ vậy bản dịch không bao giờ bị lệch một cách âm thầm.
+`tools/build-vi.py` sinh ra `vi/huevo-dragon.html`, `vi/serverhuevo.js` và `vi/package.json` từ bản gốc. Script kiểm tra từng chuỗi cần dịch: nếu tác giả đã đổi câu chữ, nó dừng lại và liệt kê **tất cả** vị trí cần cập nhật trong script, nhờ vậy bản dịch không bao giờ bị lệch một cách âm thầm.
+
+### CI tự động (`.github/workflows/vi-sync.yml`)
+
+Workflow **Sync Vietnamese translation** chạy tự động, không cần làm gì thủ công:
+
+| Khi nào | Workflow làm gì |
+| --- | --- |
+| Có **push lên `main`** (kể cả commit merge) | Chạy `build-vi.py` → nếu bản gốc đổi phần không cần dịch (màu, thông số, logic…) thì **tự commit & push** bản dịch mới vào `vi/`, rồi deploy lại Pages. Không có gì đổi thì không tạo commit rỗng. |
+| Có **PR** hoặc **bấm tay** trong tab Actions | Chỉ kiểm tra: chạy `build-vi.py` + `check-vi.py`, báo lỗi nếu `vi/` đang lệch bản gốc (nhờ vậy không merge PR có bản dịch sai). |
+| Tác giả **đổi câu chữ cần dịch** | CI **đỏ** và ghi rõ trong phần *Summary*: nhãn chuỗi, chuỗi gốc, và cách sửa `tools/build-vi.py`. CI **không tự đoán** bản dịch mới. |
+
+> Commit do bot tạo ra bằng `GITHUB_TOKEN` không tự kích hoạt các workflow khác, nên job `sync` gọi lại `static.yml` để Pages phục vụ bản dịch mới nhất.
+
+Muốn chạy kiểm tra tương tự ngay trên máy:
+
+```bash
+python3 tools/build-vi.py    # sinh lại bản dịch
+python3 tools/check-vi.py    # kiểm tra (cần node để check cú pháp JS)
+```
 
 ---
 
